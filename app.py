@@ -215,60 +215,8 @@ model = PeftModel.from_pretrained(base_model, "./pokedex-lora")
 model.eval()
 print("Model ready!")
 
-POKEBALL_LOADER = """
-<style>
-@keyframes pokespin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-</style>
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px;gap:16px;">
-    <div style="
-        width:60px;
-        height:60px;
-        border-radius:50%;
-        border:5px solid #333;
-        background:linear-gradient(180deg, #CC0000 0%, #CC0000 50%, #ffffff 50%, #ffffff 100%);
-        animation:pokespin 0.9s linear infinite;
-        position:relative;
-        box-shadow:0 2px 12px rgba(0,0,0,0.15);
-    ">
-        <div style="
-            position:absolute;
-            top:50%;
-            left:0;
-            right:0;
-            height:5px;
-            background:#333;
-            transform:translateY(-50%);
-        "></div>
-        <div style="
-            position:absolute;
-            top:50%;
-            left:50%;
-            width:16px;
-            height:16px;
-            background:white;
-            border:4px solid #333;
-            border-radius:50%;
-            transform:translate(-50%,-50%);
-        "></div>
-    </div>
-    <span style="font-family:'Courier New',monospace;color:#CC0000;font-size:13px;letter-spacing:2px;">SCANNING...</span>
-</div>
-"""
-
-WAITING_SCREEN = """
-<div style="text-align:center;padding:32px;font-family:'Courier New',monospace;">
-    <div style="font-size:48px;margin-bottom:16px;">⏳</div>
-    <div style="font-size:14px;font-weight:bold;color:#CC0000;letter-spacing:2px;margin-bottom:8px;">WAITING IN QUEUE</div>
-    <div style="font-size:12px;color:#888;line-height:1.8;">
-        Another trainer is scanning right now.<br>
-        Your turn is coming up!<br><br>
-        <span style="font-size:11px;">This may take 1-3 minutes on free hosting.</span>
-    </div>
-</div>
-"""
+# Global counter for active requests
+active_requests = {"count": 0}
 
 WELCOME_SCREEN = """
 <div style="text-align:center;padding:32px;font-family:'Courier New',monospace;">
@@ -278,7 +226,7 @@ WELCOME_SCREEN = """
         Enter a <strong style="color:#555;">Gen 1 or Gen 2</strong> Pokémon name to scan it.<br>
         Try <strong style="color:#555;">Pikachu</strong>, <strong style="color:#555;">Lugia</strong>, or <strong style="color:#555;">Charizard</strong>.<br>
         Or hit <strong style="color:#555;">🎲 RANDOM</strong> for a surprise!<br><br>
-        <span style="color:#B8860B;">✨ Pro tip: type shiny pikachu for a surprise!</span>
+        <span style="color:#B8860B;">✨ Pro tip: type <strong>shiny pikachu</strong> for a surprise!</span>
     </div>
 </div>
 """
@@ -677,38 +625,83 @@ with gr.Blocks(title="PokAIdex") as app:
 
     gr.HTML("</div></div>")
 
-    def show_waiting():
-        return WAITING_SCREEN, ""
-
     def generate_with_loader(pokemon_name):
-        cache_buster = random.randint(0, 999999)
-        yield POKEBALL_LOADER + f"<!-- {cache_buster} -->", ""
-        time.sleep(1.5)
-        yield generate_entry(pokemon_name), ""
+        active_requests["count"] += 1
+        current_count = active_requests["count"]
+
+        try:
+            if current_count > 1:
+                ahead = current_count - 1
+                est_minutes = ahead * 2
+                wait_msg = f"{ahead} trainer{'s' if ahead > 1 else ''} ahead of you, est. {est_minutes} min wait"
+            else:
+                wait_msg = "You're next!"
+
+            loader = f"""
+            <style>
+            @keyframes pokespin {{
+                from {{ transform: rotate(0deg); }}
+                to {{ transform: rotate(360deg); }}
+            }}
+            </style>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px;gap:16px;">
+                <div style="
+                    width:60px;
+                    height:60px;
+                    border-radius:50%;
+                    border:5px solid #333;
+                    background:linear-gradient(180deg, #CC0000 0%, #CC0000 50%, #ffffff 50%, #ffffff 100%);
+                    animation:pokespin 0.9s linear infinite;
+                    position:relative;
+                    box-shadow:0 2px 12px rgba(0,0,0,0.15);
+                ">
+                    <div style="
+                        position:absolute;
+                        top:50%;
+                        left:0;
+                        right:0;
+                        height:5px;
+                        background:#333;
+                        transform:translateY(-50%);
+                    "></div>
+                    <div style="
+                        position:absolute;
+                        top:50%;
+                        left:50%;
+                        width:16px;
+                        height:16px;
+                        background:white;
+                        border:4px solid #333;
+                        border-radius:50%;
+                        transform:translate(-50%,-50%);
+                    "></div>
+                </div>
+                <span style="font-family:'Courier New',monospace;color:#CC0000;font-size:13px;letter-spacing:2px;">SCANNING...</span>
+                <span style="font-family:'Courier New',monospace;color:#888;font-size:11px;letter-spacing:1px;">{wait_msg}</span>
+            </div>
+            """
+
+            cache_buster = random.randint(0, 999999)
+            yield loader + f"<!-- {cache_buster} -->", ""
+            time.sleep(1.5)
+            yield generate_entry(pokemon_name), ""
+
+        finally:
+            active_requests["count"] = max(0, active_requests["count"] - 1)
 
     def pick_random():
         return random.choice(list(KNOWN_POKEMON))
 
     search_btn.click(
-        fn=show_waiting,
-        inputs=None,
-        outputs=[output, queue_status]
-    ).then(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=[output, queue_status],
-        concurrency_limit=1
+        outputs=[output, queue_status]
     )
 
     name_input.submit(
-        fn=show_waiting,
-        inputs=None,
-        outputs=[output, queue_status]
-    ).then(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=[output, queue_status],
-        concurrency_limit=1
+        outputs=[output, queue_status]
     )
 
     random_btn.click(
@@ -718,14 +711,9 @@ with gr.Blocks(title="PokAIdex") as app:
         fn=pick_random,
         outputs=name_input
     ).then(
-        fn=show_waiting,
-        inputs=None,
-        outputs=[output, queue_status]
-    ).then(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=[output, queue_status],
-        concurrency_limit=1
+        outputs=[output, queue_status]
     ).then(
         fn=lambda: gr.update(interactive=True),
         outputs=random_btn
@@ -734,5 +722,5 @@ with gr.Blocks(title="PokAIdex") as app:
 app.launch(
     css=css,
     share=True,
-    max_threads=1
+    max_threads=4
 )
