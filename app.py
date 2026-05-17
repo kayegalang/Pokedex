@@ -255,7 +255,18 @@ POKEBALL_LOADER = """
         "></div>
     </div>
     <span style="font-family:'Courier New',monospace;color:#CC0000;font-size:13px;letter-spacing:2px;">SCANNING...</span>
-    <span style="font-family:'Courier New',monospace;color:#888;font-size:11px;letter-spacing:1px;">If this takes a while, another trainer is ahead of you in line!</span>
+</div>
+"""
+
+WAITING_SCREEN = """
+<div style="text-align:center;padding:32px;font-family:'Courier New',monospace;">
+    <div style="font-size:48px;margin-bottom:16px;">⏳</div>
+    <div style="font-size:14px;font-weight:bold;color:#CC0000;letter-spacing:2px;margin-bottom:8px;">WAITING IN QUEUE</div>
+    <div style="font-size:12px;color:#888;line-height:1.8;">
+        Another trainer is scanning right now.<br>
+        Your turn is coming up!<br><br>
+        <span style="font-size:11px;">This may take 1-3 minutes on free hosting.</span>
+    </div>
 </div>
 """
 
@@ -267,7 +278,7 @@ WELCOME_SCREEN = """
         Enter a <strong style="color:#555;">Gen 1 or Gen 2</strong> Pokémon name to scan it.<br>
         Try <strong style="color:#555;">Pikachu</strong>, <strong style="color:#555;">Lugia</strong>, or <strong style="color:#555;">Charizard</strong>.<br>
         Or hit <strong style="color:#555;">🎲 RANDOM</strong> for a surprise!<br><br>
-        <span style="color:#B8860B;">✨ Pro tip: type <strong>shiny pikachu</strong> for a surprise!</span>
+        <span style="color:#B8860B;">✨ Pro tip: type shiny pikachu for a surprise!</span>
     </div>
 </div>
 """
@@ -666,11 +677,12 @@ with gr.Blocks(title="PokAIdex") as app:
 
     gr.HTML("</div></div>")
 
+    def show_waiting():
+        return WAITING_SCREEN, ""
+
     def generate_with_loader(pokemon_name):
         cache_buster = random.randint(0, 999999)
-        yield "", '<div style="text-align:center;font-family:\'Courier New\',monospace;font-size:12px;color:#888;padding:4px;">⏳ Waiting in queue...</div>'
-        time.sleep(0.05)
-        yield POKEBALL_LOADER + f"<!-- {cache_buster} -->", '<div style="text-align:center;font-family:\'Courier New\',monospace;font-size:12px;color:#CC0000;padding:4px;">🔴 Scanning now...</div>'
+        yield POKEBALL_LOADER + f"<!-- {cache_buster} -->", ""
         time.sleep(1.5)
         yield generate_entry(pokemon_name), ""
 
@@ -678,6 +690,10 @@ with gr.Blocks(title="PokAIdex") as app:
         return random.choice(list(KNOWN_POKEMON))
 
     search_btn.click(
+        fn=show_waiting,
+        inputs=None,
+        outputs=[output, queue_status]
+    ).then(
         fn=generate_with_loader,
         inputs=name_input,
         outputs=[output, queue_status],
@@ -685,6 +701,10 @@ with gr.Blocks(title="PokAIdex") as app:
     )
 
     name_input.submit(
+        fn=show_waiting,
+        inputs=None,
+        outputs=[output, queue_status]
+    ).then(
         fn=generate_with_loader,
         inputs=name_input,
         outputs=[output, queue_status],
@@ -697,6 +717,10 @@ with gr.Blocks(title="PokAIdex") as app:
     ).then(
         fn=pick_random,
         outputs=name_input
+    ).then(
+        fn=show_waiting,
+        inputs=None,
+        outputs=[output, queue_status]
     ).then(
         fn=generate_with_loader,
         inputs=name_input,
