@@ -255,6 +255,7 @@ POKEBALL_LOADER = """
         "></div>
     </div>
     <span style="font-family:'Courier New',monospace;color:#CC0000;font-size:13px;letter-spacing:2px;">SCANNING...</span>
+    <span style="font-family:'Courier New',monospace;color:#888;font-size:11px;letter-spacing:1px;">If this takes a while, another trainer is ahead of you in line!</span>
 </div>
 """
 
@@ -266,7 +267,7 @@ WELCOME_SCREEN = """
         Enter a <strong style="color:#555;">Gen 1 or Gen 2</strong> Pokémon name to scan it.<br>
         Try <strong style="color:#555;">Pikachu</strong>, <strong style="color:#555;">Lugia</strong>, or <strong style="color:#555;">Charizard</strong>.<br>
         Or hit <strong style="color:#555;">🎲 RANDOM</strong> for a surprise!<br><br>
-        <span style="color:#DAA520;">✨ Pro tip: type <strong>shiny pikachu</strong> for a surprise!</span>
+        <span style="color:#B8860B;">✨ Pro tip: type <strong>shiny pikachu</strong> for a surprise!</span>
     </div>
 </div>
 """
@@ -332,7 +333,7 @@ def generate_entry(pokemon_name):
                 <strong style="color:#555;">{pokemon_name.capitalize()}</strong> is not in this Pokedex.<br>
                 This model covers <strong style="color:#555;">Generation 1 and 2</strong> Pokemon only.<br><br>
                 How about trying: {suggestions_html}?<br><br>
-                Or try: <strong style="color:#DAA520;">shiny pikachu</strong> ✨
+                Or try: <strong style="color:#B8860B;">shiny pikachu</strong> ✨
             </div>
         </div>
         """
@@ -343,7 +344,7 @@ def generate_entry(pokemon_name):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=1000,
+            max_new_tokens=200,
             do_sample=True,
             temperature=0.7,
             repetition_penalty=1.3,
@@ -371,7 +372,6 @@ def generate_entry(pokemon_name):
     dex_number = POKEMON_IDS.get(name_lower, "?")
     gen = "GEN 1" if dex_number <= 151 else "GEN 2"
 
-    # Evolution chain
     evo_chain = get_evolution_chain(name_lower)
     if evo_chain and len(evo_chain) > 1:
         evo_parts = []
@@ -661,17 +661,18 @@ with gr.Blocks(title="PokAIdex") as app:
         search_btn = gr.Button("SCAN POKEMON", variant="primary")
         random_btn = gr.Button("🎲 RANDOM", variant="secondary")
 
+    queue_status = gr.HTML(value="")
     output = gr.HTML(value=WELCOME_SCREEN)
 
     gr.HTML("</div></div>")
 
     def generate_with_loader(pokemon_name):
         cache_buster = random.randint(0, 999999)
-        yield ""
+        yield "", '<div style="text-align:center;font-family:\'Courier New\',monospace;font-size:12px;color:#888;padding:4px;">⏳ Waiting in queue...</div>'
         time.sleep(0.05)
-        yield POKEBALL_LOADER + f"<!-- {cache_buster} -->"
+        yield POKEBALL_LOADER + f"<!-- {cache_buster} -->", '<div style="text-align:center;font-family:\'Courier New\',monospace;font-size:12px;color:#CC0000;padding:4px;">🔴 Scanning now...</div>'
         time.sleep(1.5)
-        yield generate_entry(pokemon_name)
+        yield generate_entry(pokemon_name), ""
 
     def pick_random():
         return random.choice(list(KNOWN_POKEMON))
@@ -679,22 +680,35 @@ with gr.Blocks(title="PokAIdex") as app:
     search_btn.click(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=output
+        outputs=[output, queue_status],
+        concurrency_limit=1
     )
 
     name_input.submit(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=output
+        outputs=[output, queue_status],
+        concurrency_limit=1
     )
 
     random_btn.click(
+        fn=lambda: gr.update(interactive=False),
+        outputs=random_btn
+    ).then(
         fn=pick_random,
         outputs=name_input
     ).then(
         fn=generate_with_loader,
         inputs=name_input,
-        outputs=output
+        outputs=[output, queue_status],
+        concurrency_limit=1
+    ).then(
+        fn=lambda: gr.update(interactive=True),
+        outputs=random_btn
     )
 
-app.launch(css=css, share=True)
+app.launch(
+    css=css,
+    share=True,
+    max_threads=1
+)
